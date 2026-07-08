@@ -1,0 +1,1311 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Torre de Controle · Estoque &amp; Puxada</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+/* ================= TOKENS ================= */
+:root{
+  --bg:#F2F3F7;
+  --panel:#FFFFFF;
+  --sidebar:#12182B;
+  --sidebar-soft:#1B2440;
+  --sidebar-text:#AEB6D4;
+  --sidebar-text-active:#FFFFFF;
+  --ink:#171B2C;
+  --muted:#6B7280;
+  --border:#E4E6EE;
+  --brand:#E8A33D;
+  --stage-comercial:#E8A33D;
+  --stage-aprov:#2A9D8F;
+  --stage-puxada:#3D5A80;
+  --success:#3F8F5F;
+  --success-soft:#E8F5EC;
+  --danger:#C1444D;
+  --danger-soft:#FBEAEA;
+  --warn-soft:#FBF1DD;
+  --info-soft:#E8EEF5;
+  --radius:12px;
+  --shadow:0 1px 2px rgba(18,24,43,.06), 0 8px 24px rgba(18,24,43,.06);
+  --font-display:'Space Grotesk',sans-serif;
+  --font-body:'Inter',sans-serif;
+  --font-mono:'IBM Plex Mono',monospace;
+}
+*,*::before,*::after{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  background:var(--bg);
+  color:var(--ink);
+  font-family:var(--font-body);
+  -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3,h4{font-family:var(--font-display);margin:0;letter-spacing:-0.01em;}
+p{margin:0;}
+button{font-family:inherit;cursor:pointer;}
+input,select,textarea{font-family:inherit;font-size:14px;}
+.mono{font-family:var(--font-mono);}
+a{color:inherit;}
+
+/* ================= LAYOUT ================= */
+.shell{display:flex;min-height:100vh;}
+.sidebar{
+  width:252px;flex-shrink:0;background:var(--sidebar);color:var(--sidebar-text);
+  display:flex;flex-direction:column;padding:22px 16px;position:sticky;top:0;height:100vh;
+}
+.brand{display:flex;align-items:center;gap:10px;padding:6px 10px 22px;}
+.brand-mark{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--stage-comercial),var(--stage-puxada));display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;color:#12182B;font-size:15px;flex-shrink:0;}
+.brand-text h1{font-size:15px;color:#fff;line-height:1.2;}
+.brand-text span{font-size:11px;color:var(--sidebar-text);letter-spacing:.04em;text-transform:uppercase;}
+.nav{display:flex;flex-direction:column;gap:2px;margin-top:6px;}
+.nav-item{
+  display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:9px;
+  color:var(--sidebar-text);background:transparent;border:none;text-align:left;font-size:13.5px;font-weight:500;
+  transition:background .12s,color .12s;
+}
+.nav-item:hover{background:var(--sidebar-soft);color:#fff;}
+.nav-item.active{background:var(--sidebar-soft);color:var(--sidebar-text-active);box-shadow:inset 3px 0 0 var(--brand);}
+.nav-icon{width:18px;text-align:center;font-size:14px;}
+.sidebar-footer{margin-top:auto;padding-top:14px;border-top:1px solid rgba(255,255,255,.08);}
+.session-card{padding:10px 12px;border-radius:9px;background:var(--sidebar-soft);margin-bottom:8px;}
+.session-card .who{font-size:13px;font-weight:600;color:#fff;}
+.session-card .role{font-size:11.5px;color:var(--sidebar-text);margin-top:2px;}
+.btn-logout{width:100%;padding:9px 12px;border-radius:9px;background:transparent;border:1px solid rgba(255,255,255,.14);color:var(--sidebar-text);font-size:12.5px;font-weight:500;}
+.btn-logout:hover{background:rgba(255,255,255,.06);color:#fff;}
+
+.main{flex:1;min-width:0;display:flex;flex-direction:column;}
+.topbar{
+  display:flex;align-items:center;justify-content:space-between;padding:16px 28px;
+  background:var(--panel);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:5;
+}
+.topbar h2{font-size:19px;}
+.topbar .sub{font-size:12.5px;color:var(--muted);margin-top:2px;}
+.content{padding:26px 28px 60px;flex:1;}
+
+@media (max-width:900px){
+  .shell{flex-direction:column;}
+  .sidebar{width:100%;height:auto;position:relative;flex-direction:column;padding:14px 12px;}
+  .nav{flex-direction:row;overflow-x:auto;gap:6px;}
+  .nav-item{white-space:nowrap;}
+  .sidebar-footer{display:flex;gap:8px;align-items:center;margin-top:12px;padding-top:12px;}
+  .session-card{margin-bottom:0;flex:1;}
+  .content{padding:18px 16px 48px;}
+  .topbar{padding:14px 16px;}
+}
+
+/* ================= COMMON UI ================= */
+.card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);}
+.section-title{font-size:15px;font-weight:600;margin-bottom:14px;display:flex;align-items:center;gap:8px;}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:99px;font-size:11.5px;font-weight:600;letter-spacing:.01em;}
+.pill-comercial{background:var(--warn-soft);color:#8A5A17;}
+.pill-puxada{background:var(--info-soft);color:#2C4763;}
+.pill-success{background:var(--success-soft);color:var(--success);}
+.pill-danger{background:var(--danger-soft);color:var(--danger);}
+.btn{padding:9px 16px;border-radius:8px;border:1px solid transparent;font-size:13.5px;font-weight:600;display:inline-flex;align-items:center;gap:6px;transition:filter .12s,transform .05s;}
+.btn:active{transform:translateY(1px);}
+.btn-primary{background:var(--ink);color:#fff;}
+.btn-primary:hover{filter:brightness(1.2);}
+.btn-success{background:var(--success);color:#fff;}
+.btn-success:hover{filter:brightness(1.08);}
+.btn-danger{background:#fff;color:var(--danger);border-color:var(--danger-soft);}
+.btn-danger:hover{background:var(--danger-soft);}
+.btn-ghost{background:transparent;color:var(--ink);border-color:var(--border);}
+.btn-ghost:hover{background:var(--bg);}
+.btn-block{width:100%;justify-content:center;}
+.btn[disabled]{opacity:.5;cursor:not-allowed;}
+.field{display:flex;flex-direction:column;gap:6px;margin-bottom:14px;}
+.field label{font-size:12.5px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;}
+.field input,.field select,.field textarea{
+  padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--ink);
+}
+.field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--stage-puxada);box-shadow:0 0 0 3px rgba(61,90,128,.12);}
+.field textarea{resize:vertical;min-height:64px;}
+.hint{font-size:12px;color:var(--muted);margin-top:2px;}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+@media (max-width:640px){.grid-2{grid-template-columns:1fr;}}
+.empty-state{padding:40px 20px;text-align:center;color:var(--muted);}
+.empty-state .big{font-size:28px;margin-bottom:8px;}
+table{width:100%;border-collapse:collapse;}
+th{text-align:left;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600;padding:10px 12px;border-bottom:1px solid var(--border);}
+td{padding:11px 12px;border-bottom:1px solid var(--border);font-size:13.5px;}
+tr:last-child td{border-bottom:none;}
+.table-wrap{overflow-x:auto;}
+.badge-count{background:var(--ink);color:#fff;font-size:11px;padding:1px 7px;border-radius:99px;margin-left:auto;}
+
+/* toast */
+#toast-container{position:fixed;top:18px;right:18px;z-index:9999;display:flex;flex-direction:column;gap:8px;}
+.toast{padding:12px 16px;border-radius:9px;background:var(--ink);color:#fff;font-size:13.5px;box-shadow:var(--shadow);max-width:340px;animation:slidein .18s ease-out;}
+.toast.success{background:var(--success);}
+.toast.error{background:var(--danger);}
+@keyframes slidein{from{transform:translateX(20px);opacity:0;}to{transform:translateX(0);opacity:1;}}
+
+/* modal */
+.modal-backdrop{position:fixed;inset:0;background:rgba(17,20,33,.55);display:flex;align-items:flex-start;justify-content:center;padding:5vh 16px;z-index:200;overflow-y:auto;}
+.modal-box{background:#fff;border-radius:14px;max-width:560px;width:100%;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,.3);}
+.modal-close{position:absolute;top:16px;right:18px;background:transparent;border:none;font-size:18px;color:var(--muted);}
+
+/* login screen */
+.login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 20% 20%,#1B2440,#0C1020 70%);padding:20px;}
+.login-card{background:#fff;border-radius:18px;padding:38px;width:100%;max-width:420px;box-shadow:0 30px 80px rgba(0,0,0,.4);}
+.login-card .brand-mark{margin:0 auto 16px;}
+.login-card h1{text-align:center;font-size:20px;margin-bottom:4px;}
+.login-card .subtitle{text-align:center;color:var(--muted);font-size:13px;margin-bottom:24px;}
+.role-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;}
+.role-btn{padding:14px 10px;border-radius:10px;border:1.5px solid var(--border);background:#fff;text-align:center;font-size:12.5px;font-weight:600;color:var(--muted);}
+.role-btn .ic{font-size:19px;display:block;margin-bottom:6px;}
+.role-btn.selected{border-color:var(--ink);background:var(--bg);color:var(--ink);}
+.config-warning{background:var(--warn-soft);border:1px solid #F0D9A6;border-radius:12px;padding:18px 22px;max-width:640px;margin:60px auto;line-height:1.6;font-size:14px;}
+.config-warning code{background:#fff;border:1px solid var(--border);padding:2px 6px;border-radius:5px;font-family:var(--font-mono);font-size:12.5px;}
+
+/* kanban */
+.kanban-toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:18px;}
+.kanban-toolbar input,.kanban-toolbar select{padding:9px 12px;border:1px solid var(--border);border-radius:8px;background:#fff;}
+.kanban-scroll{overflow-x:auto;padding-bottom:6px;}
+.kanban{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(272px,1fr);gap:16px;align-items:start;}
+.kanban-col{background:#EAEBF1;border-radius:14px;padding:12px;min-height:120px;}
+.kanban-col-head{display:flex;align-items:center;gap:8px;padding:4px 6px 12px;font-size:13px;font-weight:700;}
+.kanban-col-head .dot{width:9px;height:9px;border-radius:99px;}
+.kcard{background:#fff;border-radius:11px;padding:12px 13px;margin-bottom:10px;box-shadow:0 1px 3px rgba(18,24,43,.08);border-left:3px solid var(--border);cursor:pointer;transition:transform .08s;}
+.kcard:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(18,24,43,.12);}
+.kcard .prod{font-size:13.5px;font-weight:600;margin-bottom:2px;}
+.kcard .cod{font-size:11px;color:var(--muted);font-family:var(--font-mono);margin-bottom:8px;}
+.kcard .qtd{font-family:var(--font-mono);font-size:17px;font-weight:600;}
+.kcard .meta{font-size:11.5px;color:var(--muted);margin-top:6px;display:flex;justify-content:space-between;gap:6px;}
+
+/* timeline */
+.timeline{list-style:none;margin:0;padding:0;border-left:2px solid var(--border);padding-left:16px;}
+.timeline li{position:relative;padding-bottom:16px;}
+.timeline li::before{content:'';position:absolute;left:-21px;top:3px;width:9px;height:9px;border-radius:99px;background:var(--stage-puxada);}
+.timeline .ev-tipo{font-size:13px;font-weight:600;}
+.timeline .ev-meta{font-size:11.5px;color:var(--muted);margin-top:2px;}
+.timeline .ev-detalhe{font-size:12.5px;color:var(--ink);margin-top:4px;}
+
+/* import */
+.import-drop{border:2px dashed var(--border);border-radius:12px;padding:28px;text-align:center;color:var(--muted);font-size:13.5px;}
+.mapping-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);}
+.mapping-row:last-child{border-bottom:none;}
+.mapping-row label{font-size:12.5px;font-weight:600;color:var(--ink);}
+.mapping-row select{width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:7px;}
+.preview-table{font-size:12px;}
+.preview-table th,.preview-table td{padding:6px 8px;}
+
+.qty-input{width:100%;max-width:140px;}
+.approve-form{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-top:10px;padding-top:10px;border-top:1px dashed var(--border);}
+.approve-form .field{margin-bottom:0;flex:1;min-width:130px;}
+.approve-actions{display:flex;gap:8px;}
+.queue-item{padding:16px;border:1px solid var(--border);border-radius:11px;margin-bottom:14px;background:#fff;}
+.queue-item-head{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+.queue-item .prod-name{font-size:14.5px;font-weight:600;}
+.queue-item .prod-cod{font-size:11.5px;color:var(--muted);font-family:var(--font-mono);}
+.stat-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;}
+@media (max-width:760px){.stat-row{grid-template-columns:repeat(2,1fr);}}
+.stat-card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:14px 16px;}
+.stat-card .n{font-family:var(--font-mono);font-size:22px;font-weight:600;}
+.stat-card .l{font-size:11.5px;color:var(--muted);margin-top:2px;}
+.search-results{border:1px solid var(--border);border-radius:8px;margin-top:6px;max-height:220px;overflow-y:auto;background:#fff;}
+.search-results .sr-item{padding:9px 12px;font-size:13px;border-bottom:1px solid var(--border);}
+.search-results .sr-item:last-child{border-bottom:none;}
+.search-results .sr-item:hover{background:var(--bg);}
+.search-results .sr-item small{color:var(--muted);display:block;font-size:11px;margin-top:2px;}
+.selected-product-card{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:14px;}
+</style>
+</head>
+<body>
+
+<div id="toast-container"></div>
+<div id="app"></div>
+<div id="modal-root"></div>
+
+<script>
+/* =====================================================================
+   CONFIGURAÇÃO — troque pelos dados do SEU projeto Supabase
+   (Painel Supabase > seu projeto > Settings > API)
+   ===================================================================== */
+const SUPABASE_URL = 'https://awmmaosiadxhwthnoyxl.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_nhZ1eSr5LOWW2XFGcCRiJg_y3ZtoT3T';
+
+const SENHAS = {
+  comercial: '3306',
+  aprovador_comercial: '0000',
+  aprovador_puxada: '9999'
+};
+
+const ROLE_LABEL = {
+  comercial: 'Comercial',
+  aprovador_comercial: 'Aprovador Comercial',
+  aprovador_puxada: 'Aprovador Puxada',
+  visualizacao: 'Visualização'
+};
+
+const OPERACOES = ['Virginia Maringá', 'Virginia Guarapuava', 'Virginia Ponta Grossa', 'Virginia Norte Pioneiro'];
+
+const STATUS_INFO = {
+  pendente_comercial:  {label:'Aguardando Aprovação Comercial', color:'var(--stage-comercial)', pill:'pill-comercial'},
+  pendente_puxada:     {label:'Aguardando Aprovação Puxada',    color:'var(--stage-puxada)',    pill:'pill-puxada'},
+  aprovado:            {label:'Programado',                    color:'var(--success)',          pill:'pill-success'},
+  rejeitado_comercial: {label:'Rejeitado (Comercial)',          color:'var(--danger)',           pill:'pill-danger'},
+  rejeitado_puxada:    {label:'Rejeitado (Puxada)',             color:'var(--danger)',           pill:'pill-danger'}
+};
+
+const TABS = [
+  {id:'produtos',       label:'Produtos',           icon:'📦', roles:['comercial','aprovador_comercial','aprovador_puxada','visualizacao']},
+  {id:'nova',           label:'Nova Solicitação',   icon:'➕', roles:['comercial']},
+  {id:'fila_comercial', label:'Aprovar (Comercial)',icon:'✅', roles:['aprovador_comercial']},
+  {id:'fila_puxada',    label:'Aprovar (Puxada)',   icon:'🚚', roles:['aprovador_puxada']},
+  {id:'gestao',         label:'Gestão / Kanban',    icon:'📊', roles:['comercial','aprovador_comercial','aprovador_puxada','visualizacao']}
+];
+
+/* ===================== ESTADO ===================== */
+let sb = null;
+const state = {
+  session: null,          // {role, nome}
+  tab: 'produtos',
+  produtos: [],
+  solicitacoes: [],
+  loading: false,
+  operacaoAtual: '',      // '' = todas as operações
+  produtosBusca: '',
+  produtosCategoria: '',  // '' = todas as categorias
+  produtosSort: {campo:'nome', direcao:'asc'},
+  formNova: {produtoId:null, busca:''},
+  gestaoFiltro: {busca:'', status:'todos', somenteMinhas:false},
+  importState: null       // {rows(raw), headers, mapping, parsedRows}
+};
+
+/* ===================== UTIL ===================== */
+function normalizarTexto(s){
+  return String(s==null?'':s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
+}
+function parseNumeroBR(v){
+  if(v===null||v===undefined||v==='') return 0;
+  if(typeof v==='number') return v;
+  let s=String(v).trim();
+  if(/,\d{1,2}$/.test(s)) s=s.replace(/\./g,'').replace(',','.');
+  else s=s.replace(/\.(?=\d{3}(\D|$))/g,'').replace(',','.');
+  const n=parseFloat(s);
+  return isNaN(n)?0:n;
+}
+function formatNumero(n){
+  const v=Number(n||0);
+  return v.toLocaleString('pt-BR',{maximumFractionDigits:2});
+}
+function formatDateBR(d){
+  if(!d) return '—';
+  const dt = new Date(d.length===10 ? d+'T00:00:00' : d);
+  if(isNaN(dt)) return '—';
+  return dt.toLocaleDateString('pt-BR');
+}
+function formatDateTimeBR(d){
+  if(!d) return '—';
+  const dt = new Date(d);
+  if(isNaN(dt)) return '—';
+  return dt.toLocaleDateString('pt-BR') + ' ' + dt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+}
+function esc(s){
+  return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function toast(msg, type){
+  const el = document.createElement('div');
+  el.className = 'toast' + (type ? ' '+type : '');
+  el.textContent = msg;
+  document.getElementById('toast-container').appendChild(el);
+  setTimeout(()=>{ el.style.opacity='0'; el.style.transition='opacity .25s'; setTimeout(()=>el.remove(),260); }, 3600);
+}
+function usuarioDigitando(){
+  // Enquanto o foco estiver em qualquer campo de texto, uma atualização em
+  // segundo plano (realtime) não deve reconstruir a tela e derrubar o foco.
+  const el = document.activeElement;
+  if(!el) return false;
+  return el.tagName==='INPUT' || el.tagName==='TEXTAREA';
+}
+
+/* ===================== CAMADA DE DADOS (SUPABASE) ===================== */
+async function fetchTudoPaginado(construirQuery){
+  // O Supabase limita cada consulta a um número máximo de linhas (por padrão
+  // 1000). Para tabelas que passam disso, buscamos em páginas até não sobrar
+  // mais nada, em vez de confiar numa única consulta.
+  const TAMANHO_PAGINA = 1000;
+  let inicio = 0;
+  let tudo = [];
+  while(true){
+    const {data, error} = await construirQuery().range(inicio, inicio + TAMANHO_PAGINA - 1);
+    if(error) return {data:null, error};
+    tudo = tudo.concat(data || []);
+    if(!data || data.length < TAMANHO_PAGINA) break;
+    inicio += TAMANHO_PAGINA;
+  }
+  return {data:tudo, error:null};
+}
+async function loadProdutos(){
+  const {data, error} = await fetchTudoPaginado(()=> sb.from('produtos').select('*').order('nome', {ascending:true}));
+  if(error){ toast('Erro ao carregar produtos: '+error.message, 'error'); return; }
+  state.produtos = data || [];
+}
+async function loadSolicitacoes(){
+  const {data, error} = await fetchTudoPaginado(()=> sb.from('solicitacoes').select('*').order('created_at', {ascending:false}));
+  if(error){ toast('Erro ao carregar solicitações: '+error.message, 'error'); return; }
+  state.solicitacoes = data || [];
+}
+async function loadHistorico(solicitacaoId){
+  const {data, error} = await sb.from('historico_eventos').select('*').eq('solicitacao_id', solicitacaoId).order('created_at', {ascending:true});
+  if(error){ toast('Erro ao carregar histórico: '+error.message, 'error'); return []; }
+  return data || [];
+}
+async function registrarEvento(solicitacaoId, tipo, usuario, detalhe){
+  const {error} = await sb.from('historico_eventos').insert({solicitacao_id:solicitacaoId, tipo_evento:tipo, usuario, detalhe});
+  if(error) console.error('Falha ao registrar evento no histórico:', error.message);
+}
+async function refreshData(opts){
+  opts = opts || {};
+  if(state.loading){
+    // Já existe uma atualização em andamento: não descarta, apenas agenda
+    // para rodar de novo assim que a atual terminar (evita perder um refresh).
+    state.refreshPendente = state.refreshPendente || opts;
+    return;
+  }
+  state.loading = true;
+  try{
+    await Promise.all([loadProdutos(), loadSolicitacoes()]);
+    if(opts.force || !usuarioDigitando()) render();
+  } finally {
+    state.loading = false;
+    if(state.refreshPendente){
+      const pendente = state.refreshPendente;
+      state.refreshPendente = null;
+      refreshData(pendente);
+    }
+  }
+}
+
+async function criarSolicitacao(produto, quantidade, observacao){
+  const {data, error} = await sb.from('solicitacoes').insert({
+    produto_id: produto.id,
+    codigo_produto: produto.codigo,
+    nome_produto: produto.nome,
+    operacao: produto.operacao,
+    quantidade_solicitada: quantidade,
+    solicitante_nome: state.session.nome,
+    observacao_comercial: observacao || null,
+    status: 'pendente_comercial'
+  }).select().single();
+  if(error){ toast('Erro ao criar solicitação: '+error.message, 'error'); return; }
+  await registrarEvento(data.id, 'criada', state.session.nome, `Solicitou ${formatNumero(quantidade)} un. de ${produto.nome} (${produto.operacao})`);
+  toast('Solicitação enviada com sucesso!', 'success');
+  state.formNova = {produtoId:null, busca:''};
+  await refreshData({force:true});
+}
+
+async function aprovarComercial(sol, qtd, obs){
+  const {error} = await sb.from('solicitacoes').update({
+    status:'pendente_puxada',
+    quantidade_aprovada_comercial: qtd,
+    aprovador_comercial_nome: state.session.nome,
+    data_aprovacao_comercial: new Date().toISOString(),
+    observacao_aprovador_comercial: obs || null,
+    updated_at: new Date().toISOString()
+  }).eq('id', sol.id);
+  if(error){ toast('Erro: '+error.message, 'error'); return; }
+  const parcial = qtd < sol.quantidade_solicitada ? ` (parcial — solicitado ${formatNumero(sol.quantidade_solicitada)})` : '';
+  await registrarEvento(sol.id, 'aprovado_comercial', state.session.nome, `Aprovou ${formatNumero(qtd)} un.${parcial}`);
+  toast('Aprovado e enviado para Aprovação de Puxada', 'success');
+  await refreshData({force:true});
+}
+async function rejeitarComercial(sol, motivo){
+  const {error} = await sb.from('solicitacoes').update({
+    status:'rejeitado_comercial',
+    observacao_aprovador_comercial: motivo || null,
+    aprovador_comercial_nome: state.session.nome,
+    data_aprovacao_comercial: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  }).eq('id', sol.id);
+  if(error){ toast('Erro: '+error.message, 'error'); return; }
+  await registrarEvento(sol.id, 'rejeitado_comercial', state.session.nome, motivo || 'Sem motivo informado');
+  toast('Solicitação rejeitada', 'success');
+  await refreshData({force:true});
+}
+async function aprovarPuxada(sol, qtd, prazo, obs){
+  const {error} = await sb.from('solicitacoes').update({
+    status:'aprovado',
+    quantidade_aprovada_puxada: qtd,
+    aprovador_puxada_nome: state.session.nome,
+    data_aprovacao_puxada: new Date().toISOString(),
+    prazo_puxada: prazo,
+    observacao_aprovador_puxada: obs || null,
+    updated_at: new Date().toISOString()
+  }).eq('id', sol.id);
+  if(error){ toast('Erro: '+error.message, 'error'); return; }
+  const parcial = qtd < sol.quantidade_aprovada_comercial ? ` (parcial — comercial aprovou ${formatNumero(sol.quantidade_aprovada_comercial)})` : '';
+  await registrarEvento(sol.id, 'aprovado_puxada', state.session.nome, `Puxada de ${formatNumero(qtd)} un.${parcial} programada para ${formatDateBR(prazo)}`);
+  toast('Puxada aprovada e programada', 'success');
+  await refreshData({force:true});
+}
+async function rejeitarPuxada(sol, motivo){
+  const {error} = await sb.from('solicitacoes').update({
+    status:'rejeitado_puxada',
+    observacao_aprovador_puxada: motivo || null,
+    aprovador_puxada_nome: state.session.nome,
+    data_aprovacao_puxada: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  }).eq('id', sol.id);
+  if(error){ toast('Erro: '+error.message, 'error'); return; }
+  await registrarEvento(sol.id, 'rejeitado_puxada', state.session.nome, motivo || 'Sem motivo informado');
+  toast('Solicitação rejeitada', 'success');
+  await refreshData({force:true});
+}
+async function apagarProdutosDasOperacoes(operacoes){
+  const {error} = await sb.from('produtos').delete().in('operacao', operacoes);
+  if(error){ toast('Erro ao apagar produtos existentes: '+error.message, 'error'); return false; }
+  return true;
+}
+async function importarProdutos(rows, limparAntes){
+  if(limparAntes){
+    const operacoes = Array.from(new Set(rows.map(r=>r.operacao)));
+    const ok = await apagarProdutosDasOperacoes(operacoes);
+    if(!ok) return false;
+  }
+  const nowIso = new Date().toISOString();
+  const payload = rows.map(r=>({...r, updated_at:nowIso}));
+  const {data, error} = await sb.from('produtos').upsert(payload, {onConflict:'codigo,operacao'}).select();
+  if(error){ toast('Erro na importação: '+error.message, 'error'); return false; }
+  toast(`Importação concluída: ${data.length} produto(s) gravado(s)`, 'success');
+  state.importState = null;
+  await refreshData({force:true});
+  return true;
+}
+
+/* ===================== REALTIME ===================== */
+let refreshDebounceTimer = null;
+function refreshDataDebounced(){
+  clearTimeout(refreshDebounceTimer);
+  refreshDebounceTimer = setTimeout(()=>refreshData(), 700);
+}
+function initRealtime(){
+  // Remove qualquer canal antigo antes de recriar — evita o erro de tentar
+  // assinar o mesmo canal duas vezes ao logar/deslogar sem recarregar a página.
+  sb.getChannels().forEach(ch => sb.removeChannel(ch));
+  sb.channel('rt-solicitacoes').on('postgres_changes', {event:'*', schema:'public', table:'solicitacoes'}, refreshDataDebounced).subscribe();
+  sb.channel('rt-produtos').on('postgres_changes', {event:'*', schema:'public', table:'produtos'}, refreshDataDebounced).subscribe();
+}
+
+/* ===================== IMPORTAÇÃO DE PLANILHA ===================== */
+const CAMPO_ALIASES = {
+  codigo:       ['codigo produto','codigo do produto','codigo','sku','cod produto','cod. produto'],
+  nome:         ['nome produto','nome do produto','produto','descricao','descricao produto'],
+  categoria:    ['categoria produto','categoria'],
+  segmento:     ['segmento produto','segmento'],
+  embalagem:    ['embalagem produto','embalagem','tipo de embalagem'],
+  operacao:     ['operacao','operacao produto','unidade','revenda','filial','regional'],
+  estoque:      ['estoque','estoque atual','estoque un','estoque unidades'],
+  estoque_hl:   ['estoque hl','estoque (hl)','estoque em hl'],
+  media_vendas: ['media de vendas','media vendas','media de venda','media mensal de vendas'],
+  dias_estoque: ['dias em estoque','dias de estoque','dias estoque','giro','giro em dias']
+};
+const CAMPO_LABEL = {
+  codigo:'Código Produto', nome:'Nome Produto', categoria:'Categoria Produto', segmento:'Segmento Produto',
+  embalagem:'Embalagem Produto', operacao:'Operação', estoque:'Estoque', estoque_hl:'Estoque HL', media_vendas:'Média de Vendas', dias_estoque:'Dias em Estoque'
+};
+function normalizarOperacao(raw){
+  const q = normalizarTexto(raw);
+  if(!q) return '';
+  const achada = OPERACOES.find(op => normalizarTexto(op)===q || normalizarTexto(op).includes(q) || q.includes(normalizarTexto(op)));
+  return achada || String(raw).trim();
+}
+function detectarMapeamento(headers){
+  const norm = headers.map(normalizarTexto);
+  const mapeamento = {};
+  for(const campo in CAMPO_ALIASES){
+    let idx = norm.findIndex(h => CAMPO_ALIASES[campo].includes(h));
+    if(idx===-1) idx = norm.findIndex(h => CAMPO_ALIASES[campo].some(a=>h.includes(a)));
+    mapeamento[campo] = idx;
+  }
+  return mapeamento;
+}
+function handleArquivoSelecionado(file){
+  const reader = new FileReader();
+  reader.onload = (e)=>{
+    try{
+      const wb = XLSX.read(e.target.result, {type:'array'});
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, {header:1, raw:true, defval:''});
+      if(!rows.length){ toast('A planilha parece estar vazia', 'error'); return; }
+      const headers = rows[0].map(h=>String(h||''));
+      const dataRows = rows.slice(1).filter(r => r.some(c => String(c).trim()!==''));
+      const mapping = detectarMapeamento(headers);
+      state.importState = {headers, dataRows, mapping};
+      renderContent();
+    }catch(err){
+      toast('Não foi possível ler o arquivo: '+err.message, 'error');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+function construirLinhasImportacao(){
+  const {dataRows, mapping} = state.importState;
+  const detalhesIgnoradas = [];
+  const porChave = new Map();
+  let duplicadas = 0;
+  dataRows.forEach((row, idx)=>{
+    const numeroLinha = idx + 2; // +1 para sair do índice 0, +1 pela linha de cabeçalho
+    const get = (campo)=> mapping[campo]>=0 ? row[mapping[campo]] : '';
+    const codigo = String(get('codigo')||'').trim();
+    const nome = String(get('nome')||'').trim();
+    const operacao = normalizarOperacao(get('operacao'));
+    const faltando = [];
+    if(!codigo) faltando.push('Código Produto');
+    if(!nome) faltando.push('Nome Produto');
+    if(!operacao) faltando.push('Operação');
+    if(faltando.length){
+      detalhesIgnoradas.push({linha:numeroLinha, motivo:'Faltando: '+faltando.join(', ')});
+      return;
+    }
+    const linhaObj = {
+      codigo, nome, operacao,
+      categoria: String(get('categoria')||'').trim() || null,
+      segmento: String(get('segmento')||'').trim() || null,
+      embalagem: String(get('embalagem')||'').trim() || null,
+      estoque: parseNumeroBR(get('estoque')),
+      estoque_hl: parseNumeroBR(get('estoque_hl')),
+      media_vendas: parseNumeroBR(get('media_vendas')),
+      dias_estoque: parseNumeroBR(get('dias_estoque'))
+    };
+    const chave = normalizarTexto(codigo)+'||'+normalizarTexto(operacao);
+    if(porChave.has(chave)) duplicadas++;
+    porChave.set(chave, linhaObj); // se repetir código+operação, fica a última ocorrência
+  });
+  return {linhas: Array.from(porChave.values()), ignoradas: detalhesIgnoradas.length, duplicadas, detalhesIgnoradas};
+}
+function baixarModeloCSV(){
+  const headerRow = Object.values(CAMPO_LABEL).join(';');
+  const exemplo = ['10012345','Cerveja Brahma Duplo Malte 350ml','Cerveja','Core','Lata 350ml','Virginia Maringá','1200','42,5','380','3,2'].join(';');
+  const blob = new Blob(['\uFEFF'+headerRow+'\n'+exemplo], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'modelo_importacao_produtos.csv'; a.click();
+  URL.revokeObjectURL(url);
+}
+
+/* ===================== AUTENTICAÇÃO ===================== */
+function tentarLogin(role, nome, senha){
+  if(!nome || !nome.trim()){ toast('Informe seu nome', 'error'); return; }
+  if(role !== 'visualizacao' && SENHAS[role] !== senha){ toast('Senha incorreta para este perfil', 'error'); return; }
+  state.session = {role, nome: nome.trim()};
+  sessionStorage.setItem('sessao_estoque_puxada', JSON.stringify(state.session));
+  state.tab = 'produtos';
+  bootstrapApp();
+}
+function fazerLogout(){
+  sessionStorage.removeItem('sessao_estoque_puxada');
+  state.session = null;
+  render();
+}
+
+/* ===================== RENDER: LOGIN ===================== */
+let loginSelectedRole = 'comercial';
+function renderLogin(){
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div class="login-wrap">
+      <div class="login-card">
+        <div class="brand-mark" style="width:46px;height:46px;font-size:19px;">TC</div>
+        <h1>Torre de Controle</h1>
+        <div class="subtitle">Gestão de Estoque &amp; Aprovação de Puxada</div>
+        <form id="form-login">
+          <div class="field">
+            <label>Seu nome</label>
+            <input type="text" id="login-nome" placeholder="Como você quer aparecer no sistema" autocomplete="off" required>
+          </div>
+          <div class="field">
+            <label>Perfil de acesso</label>
+            <div class="role-grid" id="role-grid">
+              ${roleBtnHtml('comercial','🧑‍💼','Comercial')}
+              ${roleBtnHtml('aprovador_comercial','✅','Aprov. Comercial')}
+              ${roleBtnHtml('aprovador_puxada','🚚','Aprov. Puxada')}
+              ${roleBtnHtml('visualizacao','👁️','Só Visualizar')}
+            </div>
+          </div>
+          <div class="field" id="senha-field" style="${loginSelectedRole==='visualizacao'?'display:none;':''}">
+            <label>Senha do perfil</label>
+            <input type="password" id="login-senha" placeholder="••••" inputmode="numeric" maxlength="6" autocomplete="off">
+          </div>
+          <button type="submit" class="btn btn-primary btn-block">Entrar</button>
+        </form>
+      </div>
+    </div>
+  `;
+  document.getElementById('form-login').addEventListener('submit', (e)=>{
+    e.preventDefault();
+    const nome = document.getElementById('login-nome').value;
+    const senhaEl = document.getElementById('login-senha');
+    const senha = senhaEl ? senhaEl.value : '';
+    tentarLogin(loginSelectedRole, nome, senha);
+  });
+}
+function roleBtnHtml(role, icon, label){
+  const sel = loginSelectedRole===role ? ' selected' : '';
+  return `<button type="button" class="role-btn${sel}" data-role="${role}"><span class="ic">${icon}</span>${label}</button>`;
+}
+
+/* ===================== TELA DE CONFIGURAÇÃO PENDENTE ===================== */
+function renderConfigPendente(){
+  document.getElementById('app').innerHTML = `
+    <div class="config-warning">
+      <h2 style="margin-bottom:10px;">⚙️ Falta conectar seu Supabase</h2>
+      <p>Este app ainda não tem as credenciais do seu projeto Supabase. Abra o arquivo <code>app.html</code>
+      em um editor de texto, encontre a seção <code>CONFIGURAÇÃO</code> no início do <code>&lt;script&gt;</code> e substitua:</p>
+      <p style="margin:12px 0;"><code>SUPABASE_URL</code> e <code>SUPABASE_ANON_KEY</code></p>
+      <p>pelos valores do seu projeto em <b>Supabase &gt; Settings &gt; API</b> (Project URL e chave <code>anon public</code>).
+      Antes disso, rode o script <code>schema.sql</code> no SQL Editor do seu projeto para criar as tabelas.</p>
+    </div>`;
+}
+
+/* ===================== RENDER: APP (SHELL) ===================== */
+function render(){
+  if(!state.session){ renderLogin(); return; }
+  renderShell();
+  renderContent();
+}
+function renderShell(){
+  const app = document.getElementById('app');
+  const role = state.session.role;
+  const tabsVisiveis = TABS.filter(t=>t.roles.includes(role));
+  app.innerHTML = `
+    <div class="shell">
+      <div class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">TC</div>
+          <div class="brand-text"><h1>Torre de Controle</h1><span>Estoque &amp; Puxada</span></div>
+        </div>
+        <div class="nav" id="nav">
+          ${tabsVisiveis.map(t=>`
+            <button class="nav-item ${state.tab===t.id?'active':''}" data-action="ir-tab" data-tab="${t.id}">
+              <span class="nav-icon">${t.icon}</span>${t.label}
+            </button>`).join('')}
+        </div>
+        <div class="sidebar-footer">
+          <div class="session-card">
+            <div class="who">${esc(state.session.nome)}</div>
+            <div class="role">${ROLE_LABEL[role]}</div>
+          </div>
+          <button class="btn-logout" data-action="logout">Sair</button>
+        </div>
+      </div>
+      <div class="main">
+        <div class="topbar">
+          <div>
+            <h2 id="topbar-title"></h2>
+            <div class="sub" id="topbar-sub"></div>
+          </div>
+          <div style="display:flex;gap:10px;align-items:center;">
+            <select id="filtro-operacao-global" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;background:#fff;font-weight:600;font-size:13px;">
+              <option value="">Todas as Operações</option>
+              ${OPERACOES.map(op=>`<option value="${esc(op)}" ${state.operacaoAtual===op?'selected':''}>${esc(op)}</option>`).join('')}
+            </select>
+            <button class="btn btn-ghost" data-action="atualizar">↻ Atualizar</button>
+          </div>
+        </div>
+        <div class="content" id="content"></div>
+      </div>
+    </div>
+  `;
+}
+const TAB_META = {
+  produtos:{title:'Produtos', sub:'Estoque, embalagens e giro por produto'},
+  nova:{title:'Nova Solicitação', sub:'Peça uma quantidade acima do estoque disponível'},
+  fila_comercial:{title:'Aprovação Comercial', sub:'Aprove total, parcial ou rejeite as solicitações'},
+  fila_puxada:{title:'Aprovação de Puxada', sub:'Confirme a quantidade e defina o prazo de puxada'},
+  gestao:{title:'Gestão / Kanban', sub:'Visão geral de tudo que foi pedido, aprovado ou rejeitado'}
+};
+
+function renderContent(){
+  const meta = TAB_META[state.tab] || {title:'', sub:''};
+  const titleEl = document.getElementById('topbar-title');
+  const subEl = document.getElementById('topbar-sub');
+  if(titleEl) titleEl.textContent = meta.title;
+  if(subEl) subEl.textContent = meta.sub;
+  const el = document.getElementById('content');
+  if(!el) return;
+  if(state.tab==='produtos') el.innerHTML = renderProdutosTab();
+  else if(state.tab==='nova') el.innerHTML = renderNovaTab();
+  else if(state.tab==='fila_comercial') el.innerHTML = renderFilaComercialTab();
+  else if(state.tab==='fila_puxada') el.innerHTML = renderFilaPuxadaTab();
+  else if(state.tab==='gestao') el.innerHTML = renderGestaoTab();
+  if(state.tab==='produtos') renderTabelaProdutosBody();
+  if(state.tab==='nova') renderResultadosBuscaNova();
+  if(state.tab==='gestao') renderKanbanBoard();
+}
+
+/* ===================== TAB: PRODUTOS ===================== */
+function renderProdutosTab(){
+  const podeImportar = state.session.role !== 'visualizacao';
+  const categorias = Array.from(new Set(state.produtos.map(p=>p.categoria).filter(Boolean))).sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  const colunas = [
+    {campo:'codigo', label:'Código'}, {campo:'nome', label:'Nome'}, {campo:'categoria', label:'Categoria'},
+    {campo:'segmento', label:'Segmento'}, {campo:'embalagem', label:'Embalagem'}, {campo:'operacao', label:'Operação'},
+    {campo:'estoque', label:'Estoque'}, {campo:'estoque_hl', label:'Estoque HL'},
+    {campo:'media_vendas', label:'Média Vendas'}, {campo:'dias_estoque', label:'Dias Estoque'}
+  ];
+  const seta = (campo)=> state.produtosSort.campo===campo ? (state.produtosSort.direcao==='asc' ? ' ▲' : ' ▼') : '';
+  return `
+    <div class="card" style="padding:18px;margin-bottom:18px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+        <input type="text" id="busca-produtos-tab" placeholder="Buscar por código, nome, categoria ou segmento..." style="flex:1;min-width:220px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;">
+        <select id="filtro-categoria-produtos" style="padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:#fff;">
+          <option value="">Todas as Categorias</option>
+          ${categorias.map(c=>`<option value="${esc(c)}" ${state.produtosCategoria===c?'selected':''}>${esc(c)}</option>`).join('')}
+        </select>
+        ${podeImportar ? `<button class="btn btn-primary" data-action="abrir-importar">⬆ Importar Planilha</button>` : ''}
+      </div>
+      <p class="hint" style="margin-top:8px;">Dica: use o seletor de Operação no topo da página pra filtrar por unidade. Clique no cabeçalho de qualquer coluna abaixo pra ordenar.</p>
+    </div>
+    ${state.importState ? renderImportPanel() : ''}
+    <div class="card" style="padding:0;">
+      <div class="table-wrap">
+        <table id="tabela-produtos">
+          <thead><tr>
+            ${colunas.map(c=>`<th style="cursor:pointer;user-select:none;" data-action="ordenar-produtos" data-campo="${c.campo}">${c.label}${seta(c.campo)}</th>`).join('')}
+            ${state.session.role==='comercial' ? '<th></th>' : ''}
+          </tr></thead>
+          <tbody id="tabela-produtos-body"></tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+function produtosFiltrados(){
+  const q = normalizarTexto(state.produtosBusca);
+  let lista = state.produtos.filter(p=>{
+    if(state.operacaoAtual && p.operacao!==state.operacaoAtual) return false;
+    if(state.produtosCategoria && p.categoria!==state.produtosCategoria) return false;
+    if(q && !normalizarTexto([p.codigo,p.nome,p.categoria,p.segmento].join(' ')).includes(q)) return false;
+    return true;
+  });
+  const {campo, direcao} = state.produtosSort;
+  const numericos = new Set(['estoque','estoque_hl','media_vendas','dias_estoque']);
+  lista = lista.slice().sort((a,b)=>{
+    let r;
+    if(numericos.has(campo)) r = (Number(a[campo])||0) - (Number(b[campo])||0);
+    else r = String(a[campo]||'').localeCompare(String(b[campo]||''), 'pt-BR', {sensitivity:'base'});
+    return direcao==='asc' ? r : -r;
+  });
+  return lista;
+}
+function renderTabelaProdutosBody(){
+  const tbody = document.getElementById('tabela-produtos-body');
+  if(!tbody) return;
+  const lista = produtosFiltrados();
+  if(!lista.length){
+    const msg = state.produtos.length===0
+      ? `Nenhum produto cadastrado ainda.${state.session.role!=='visualizacao' ? ' Importe sua planilha para começar.' : ''}`
+      : `Nenhum produto encontrado com esse filtro (existem ${state.produtos.length} produto(s) cadastrados no total). Tente outra busca ou mude o filtro de Operação no topo da tela.`;
+    tbody.innerHTML = `<tr><td colspan="11"><div class="empty-state"><div class="big">📦</div>${msg}</div></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = lista.map(p=>`
+    <tr>
+      <td class="mono">${esc(p.codigo)}</td>
+      <td>${esc(p.nome)}</td>
+      <td>${esc(p.categoria||'—')}</td>
+      <td>${esc(p.segmento||'—')}</td>
+      <td>${esc(p.embalagem||'—')}</td>
+      <td>${esc(p.operacao||'—')}</td>
+      <td class="mono">${formatNumero(p.estoque)}</td>
+      <td class="mono">${formatNumero(p.estoque_hl)}</td>
+      <td class="mono">${formatNumero(p.media_vendas)}</td>
+      <td class="mono">${formatNumero(p.dias_estoque)}</td>
+      ${state.session.role==='comercial' ? `<td><button class="btn btn-ghost" data-action="solicitar-produto" data-id="${p.id}">Solicitar</button></td>` : ''}
+    </tr>
+  `).join('');
+}
+function renderImportPanel(){
+  const {headers, mapping} = state.importState;
+  const {linhas, ignoradas, duplicadas, detalhesIgnoradas} = construirLinhasImportacao();
+  const preview = linhas.slice(0,5);
+  const operacoesDoArquivo = Array.from(new Set(linhas.map(l=>l.operacao))).filter(Boolean);
+  return `
+    <div class="card" style="padding:20px;margin-bottom:18px;">
+      <div class="section-title">Confirme o mapeamento de colunas</div>
+      <p class="hint" style="margin-bottom:14px;">Detectamos automaticamente as colunas abaixo. Ajuste se algo não bater antes de confirmar.</p>
+      <div style="margin-bottom:16px;">
+        ${Object.keys(CAMPO_LABEL).map(campo=>`
+          <div class="mapping-row">
+            <label>${CAMPO_LABEL[campo]}</label>
+            <select data-campo="${campo}" class="mapping-select">
+              <option value="-1">— não importar —</option>
+              ${headers.map((h,i)=>`<option value="${i}" ${mapping[campo]===i?'selected':''}>${esc(h||'(coluna '+(i+1)+')')}</option>`).join('')}
+            </select>
+          </div>
+        `).join('')}
+      </div>
+      <p class="hint" style="margin-bottom:10px;">${linhas.length} linha(s) prontas para importar${ignoradas ? `, ${ignoradas} ignorada(s)` : ''}${duplicadas ? `, ${duplicadas} duplicada(s) (mesmo código + operação — só a última ocorrência foi mantida)` : ''}.</p>
+      ${detalhesIgnoradas.length ? `
+        <div class="card" style="padding:12px 14px;margin-bottom:16px;background:var(--danger-soft);border-color:#F0C9CC;">
+          <div style="font-weight:600;font-size:12.5px;margin-bottom:8px;color:var(--danger);">Linhas ignoradas da planilha (linha = número da linha no Excel)</div>
+          <div style="max-height:160px;overflow-y:auto;font-size:12.5px;">
+            ${detalhesIgnoradas.map(d=>`<div style="padding:3px 0;">Linha ${d.linha}: ${esc(d.motivo)}</div>`).join('')}
+          </div>
+        </div>
+      ` : ''}
+      <div class="card" style="padding:12px 14px;margin-bottom:16px;background:var(--warn-soft);border-color:#F0D9A6;">
+        <label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;cursor:pointer;">
+          <input type="checkbox" id="import-limpar-antes" style="margin-top:3px;" checked>
+          <span>
+            <b>Apagar os produtos já cadastrados</b> nas operações desta planilha antes de importar
+            (recomendado para atualização diária — evita produto antigo/descontinuado ficar "preso" com estoque errado).<br>
+            ${operacoesDoArquivo.length ? `Isso vai afetar só: <b>${operacoesDoArquivo.map(o=>esc(o)).join(', ')}</b>. As outras operações não são tocadas.` : ''}
+          </span>
+        </label>
+      </div>
+      <div class="table-wrap" style="margin-bottom:16px;">
+        <table class="preview-table">
+          <thead><tr><th>Código</th><th>Nome</th><th>Categoria</th><th>Segmento</th><th>Embalagem</th><th>Operação</th><th>Estoque</th><th>Estoque HL</th><th>Média Vendas</th><th>Dias Estoque</th></tr></thead>
+          <tbody>
+            ${preview.map(r=>`<tr><td class="mono">${esc(r.codigo)}</td><td>${esc(r.nome)}</td><td>${esc(r.categoria||'—')}</td><td>${esc(r.segmento||'—')}</td><td>${esc(r.embalagem||'—')}</td><td>${esc(r.operacao)}</td><td class="mono">${formatNumero(r.estoque)}</td><td class="mono">${formatNumero(r.estoque_hl)}</td><td class="mono">${formatNumero(r.media_vendas)}</td><td class="mono">${formatNumero(r.dias_estoque)}</td></tr>`).join('') || '<tr><td colspan="10">Nenhuma linha válida encontrada</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button class="btn btn-success" data-action="confirmar-importacao" ${linhas.length?'':'disabled'}>Confirmar Importação (${linhas.length})</button>
+        <button class="btn btn-ghost" data-action="cancelar-importacao">Cancelar</button>
+        <button class="btn btn-ghost" data-action="baixar-modelo" style="margin-left:auto;">⬇ Baixar modelo (CSV)</button>
+      </div>
+    </div>
+  `;
+}
+
+/* ===================== TAB: NOVA SOLICITAÇÃO ===================== */
+function renderNovaTab(){
+  const produto = state.produtos.find(p=>p.id===state.formNova.produtoId);
+  return `
+    <div class="card" style="padding:22px;max-width:640px;">
+      <div class="field">
+        <label>Buscar produto</label>
+        <input type="text" id="busca-produto-nova" placeholder="Digite o código ou nome do produto" autocomplete="off" value="${esc(state.formNova.busca)}">
+        <div class="search-results" id="resultados-busca-nova" style="display:none;"></div>
+      </div>
+      ${produto ? `
+        <div class="selected-product-card">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:6px;">
+            <div style="font-weight:600;">${esc(produto.nome)} <span class="mono" style="color:var(--muted);font-weight:400;">(${esc(produto.codigo)})</span></div>
+            <span class="pill pill-puxada">${esc(produto.operacao||'—')}</span>
+          </div>
+          <div style="display:flex;gap:18px;flex-wrap:wrap;font-size:12.5px;color:var(--muted);">
+            <span>Estoque: <b class="mono" style="color:var(--ink);">${formatNumero(produto.estoque)}</b></span>
+            <span>Estoque HL: <b class="mono" style="color:var(--ink);">${formatNumero(produto.estoque_hl)}</b></span>
+            <span>Média de vendas: <b class="mono" style="color:var(--ink);">${formatNumero(produto.media_vendas)}</b></span>
+            <span>Dias em estoque: <b class="mono" style="color:var(--ink);">${formatNumero(produto.dias_estoque)}</b></span>
+          </div>
+        </div>
+        <form id="form-nova-solicitacao">
+          <div class="field">
+            <label>Quantidade necessária</label>
+            <input type="number" id="nova-qtd" min="0.01" step="any" required>
+            <div class="hint">Informe a quantidade total que a demanda exige, mesmo que passe do estoque atual.</div>
+          </div>
+          <div class="field">
+            <label>Observação (opcional)</label>
+            <textarea id="nova-obs" placeholder="Contexto da demanda, cliente, evento, etc."></textarea>
+          </div>
+          <button type="submit" class="btn btn-primary btn-block">Enviar para Aprovação Comercial</button>
+        </form>
+      ` : `<p class="hint">Busque e selecione um produto acima para montar a solicitação.</p>`}
+    </div>
+  `;
+}
+function renderResultadosBuscaNova(){
+  const box = document.getElementById('resultados-busca-nova');
+  const q = normalizarTexto(state.formNova.busca);
+  if(box){
+    if(!q){
+      box.style.display='none'; box.innerHTML='';
+    } else {
+      const lista = state.produtos
+        .filter(p => !state.operacaoAtual || p.operacao===state.operacaoAtual)
+        .filter(p => normalizarTexto(p.codigo+' '+p.nome).includes(q))
+        .slice(0,8);
+      if(!lista.length){
+        box.style.display='block';
+        box.innerHTML = `<div class="sr-item">Nenhum produto encontrado</div>`;
+      } else {
+        box.style.display='block';
+        box.innerHTML = lista.map(p=>`
+          <div class="sr-item" data-action="selecionar-produto-nova" data-id="${p.id}">
+            ${esc(p.nome)}<small>${esc(p.codigo)} · ${esc(p.operacao||'—')} · Estoque: ${formatNumero(p.estoque)}</small>
+          </div>`).join('');
+      }
+    }
+  }
+  // O formulário precisa ser vinculado sempre, independente de ter texto na
+  // busca — antes isso ficava preso dentro do "if" acima e, ao limpar a busca
+  // após escolher um produto, o botão "Enviar" parava de funcionar de vez.
+  const form = document.getElementById('form-nova-solicitacao');
+  if(form && !form.dataset.bound){
+    form.dataset.bound = '1';
+    form.addEventListener('submit', (e)=>{
+      e.preventDefault();
+      const produto = state.produtos.find(pp=>pp.id===state.formNova.produtoId);
+      const qtd = parseFloat(document.getElementById('nova-qtd').value);
+      const obs = document.getElementById('nova-obs').value;
+      if(!produto || !qtd || qtd<=0){ toast('Informe uma quantidade válida', 'error'); return; }
+      criarSolicitacao(produto, qtd, obs);
+    });
+  }
+}
+
+/* ===================== TAB: FILA APROVAÇÃO COMERCIAL ===================== */
+function renderFilaComercialTab(){
+  const fila = state.solicitacoes
+    .filter(s=>s.status==='pendente_comercial')
+    .filter(s=>!state.operacaoAtual || s.operacao===state.operacaoAtual)
+    .sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
+  if(!fila.length) return `<div class="card"><div class="empty-state"><div class="big">✅</div>Nenhuma solicitação aguardando aprovação comercial no momento.</div></div>`;
+  return fila.map(sol=>`
+    <div class="queue-item">
+      <div class="queue-item-head">
+        <div>
+          <div class="prod-name">${esc(sol.nome_produto)} <span class="pill pill-puxada" style="margin-left:6px;">${esc(sol.operacao||'—')}</span></div>
+          <div class="prod-cod">${esc(sol.codigo_produto)} · solicitado por ${esc(sol.solicitante_nome)} em ${formatDateTimeBR(sol.created_at)}</div>
+        </div>
+        <div class="qty-input" style="text-align:right;">
+          <div class="hint">Quantidade solicitada</div>
+          <div class="mono" style="font-size:19px;font-weight:600;">${formatNumero(sol.quantidade_solicitada)}</div>
+        </div>
+      </div>
+      ${sol.observacao_comercial ? `<p class="hint" style="margin-top:8px;">"${esc(sol.observacao_comercial)}"</p>` : ''}
+      <div class="approve-form">
+        <div class="field">
+          <label>Quantidade a aprovar</label>
+          <input type="number" class="qty-input" id="qtd-com-${sol.id}" value="${sol.quantidade_solicitada}" min="0" step="any">
+        </div>
+        <div class="field" style="flex:2;min-width:200px;">
+          <label>Observação</label>
+          <input type="text" id="obs-com-${sol.id}" placeholder="Opcional">
+        </div>
+        <div class="approve-actions">
+          <button class="btn btn-success" data-action="aprovar-comercial" data-id="${sol.id}">Aprovar</button>
+          <button class="btn btn-danger" data-action="rejeitar-comercial" data-id="${sol.id}">Rejeitar</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+/* ===================== TAB: FILA APROVAÇÃO PUXADA ===================== */
+function renderFilaPuxadaTab(){
+  const fila = state.solicitacoes
+    .filter(s=>s.status==='pendente_puxada')
+    .filter(s=>!state.operacaoAtual || s.operacao===state.operacaoAtual)
+    .sort((a,b)=>new Date(a.data_aprovacao_comercial)-new Date(b.data_aprovacao_comercial));
+  if(!fila.length) return `<div class="card"><div class="empty-state"><div class="big">🚚</div>Nenhuma solicitação aguardando aprovação de puxada no momento.</div></div>`;
+  const hoje = new Date().toISOString().slice(0,10);
+  return fila.map(sol=>`
+    <div class="queue-item">
+      <div class="queue-item-head">
+        <div>
+          <div class="prod-name">${esc(sol.nome_produto)} <span class="pill pill-puxada" style="margin-left:6px;">${esc(sol.operacao||'—')}</span></div>
+          <div class="prod-cod">${esc(sol.codigo_produto)} · aprovado pelo Comercial (${esc(sol.aprovador_comercial_nome)}) em ${formatDateTimeBR(sol.data_aprovacao_comercial)}</div>
+        </div>
+        <div class="qty-input" style="text-align:right;">
+          <div class="hint">Quantidade a puxar</div>
+          <div class="mono" style="font-size:19px;font-weight:600;">${formatNumero(sol.quantidade_aprovada_comercial)}</div>
+        </div>
+      </div>
+      ${sol.observacao_aprovador_comercial ? `<p class="hint" style="margin-top:8px;">Obs. do Comercial: "${esc(sol.observacao_aprovador_comercial)}"</p>` : ''}
+      <div class="approve-form">
+        <div class="field">
+          <label>Quantidade confirmada</label>
+          <input type="number" class="qty-input" id="qtd-pux-${sol.id}" value="${sol.quantidade_aprovada_comercial}" min="0" step="any">
+        </div>
+        <div class="field">
+          <label>Prazo de puxada</label>
+          <input type="date" id="prazo-pux-${sol.id}" min="${hoje}" required>
+        </div>
+        <div class="field" style="flex:2;min-width:200px;">
+          <label>Observação</label>
+          <input type="text" id="obs-pux-${sol.id}" placeholder="Opcional">
+        </div>
+        <div class="approve-actions">
+          <button class="btn btn-success" data-action="aprovar-puxada" data-id="${sol.id}">Aprovar e Definir Prazo</button>
+          <button class="btn btn-danger" data-action="rejeitar-puxada" data-id="${sol.id}">Rejeitar</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+/* ===================== TAB: GESTÃO / KANBAN ===================== */
+function renderGestaoTab(){
+  const total = state.solicitacoes.length;
+  const pendComercial = state.solicitacoes.filter(s=>s.status==='pendente_comercial').length;
+  const pendPuxada = state.solicitacoes.filter(s=>s.status==='pendente_puxada').length;
+  const aprovadas = state.solicitacoes.filter(s=>s.status==='aprovado').length;
+  return `
+    <div class="stat-row">
+      <div class="stat-card"><div class="n">${total}</div><div class="l">Total de solicitações</div></div>
+      <div class="stat-card"><div class="n" style="color:var(--stage-comercial);">${pendComercial}</div><div class="l">Aguardando Comercial</div></div>
+      <div class="stat-card"><div class="n" style="color:var(--stage-puxada);">${pendPuxada}</div><div class="l">Aguardando Puxada</div></div>
+      <div class="stat-card"><div class="n" style="color:var(--success);">${aprovadas}</div><div class="l">Programadas</div></div>
+    </div>
+    <div class="kanban-toolbar">
+      <input type="text" id="busca-gestao" placeholder="Buscar produto, código ou solicitante..." style="flex:1;min-width:220px;">
+      <select id="filtro-status-gestao">
+        <option value="todos">Todos os status</option>
+        <option value="pendente_comercial">Aguardando Aprovação Comercial</option>
+        <option value="pendente_puxada">Aguardando Aprovação Puxada</option>
+        <option value="aprovado">Programado</option>
+        <option value="rejeitado">Rejeitado (qualquer etapa)</option>
+      </select>
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);">
+        <input type="checkbox" id="filtro-minhas-gestao"> Somente minhas solicitações
+      </label>
+    </div>
+    <div class="kanban-scroll">
+      <div class="kanban" id="kanban-board"></div>
+    </div>
+  `;
+}
+function solicitacoesFiltradasGestao(){
+  const {busca, status, somenteMinhas} = state.gestaoFiltro;
+  const q = normalizarTexto(busca);
+  return state.solicitacoes.filter(s=>{
+    if(state.operacaoAtual && s.operacao!==state.operacaoAtual) return false;
+    if(q && !normalizarTexto(s.nome_produto+' '+s.codigo_produto+' '+s.solicitante_nome).includes(q)) return false;
+    if(status==='rejeitado' && !s.status.startsWith('rejeitado')) return false;
+    if(status!=='todos' && status!=='rejeitado' && s.status!==status) return false;
+    if(somenteMinhas && s.solicitante_nome!==state.session.nome) return false;
+    return true;
+  });
+}
+function renderKanbanBoard(){
+  const board = document.getElementById('kanban-board');
+  if(!board) return;
+  const buscaEl = document.getElementById('busca-gestao');
+  const statusEl = document.getElementById('filtro-status-gestao');
+  const minhasEl = document.getElementById('filtro-minhas-gestao');
+  if(buscaEl) buscaEl.value = state.gestaoFiltro.busca;
+  if(statusEl) statusEl.value = state.gestaoFiltro.status;
+  if(minhasEl) minhasEl.checked = state.gestaoFiltro.somenteMinhas;
+
+  const lista = solicitacoesFiltradasGestao();
+  const colunas = [
+    {status:'pendente_comercial', label:'Aguardando Aprovação Comercial', cor:'var(--stage-comercial)'},
+    {status:'pendente_puxada', label:'Aguardando Aprovação Puxada', cor:'var(--stage-puxada)'},
+    {status:'aprovado', label:'Programado', cor:'var(--success)'},
+    {status:'rejeitado', label:'Rejeitado', cor:'var(--danger)'}
+  ];
+  board.innerHTML = colunas.map(col=>{
+    const itens = lista.filter(s => col.status==='rejeitado' ? s.status.startsWith('rejeitado') : s.status===col.status);
+    return `
+      <div class="kanban-col">
+        <div class="kanban-col-head"><span class="dot" style="background:${col.cor};"></span>${col.label}<span class="badge-count">${itens.length}</span></div>
+        ${itens.length ? itens.map(s=>renderKanbanCard(s, col.cor)).join('') : `<div class="hint" style="padding:8px;">Nenhuma solicitação aqui</div>`}
+      </div>
+    `;
+  }).join('');
+}
+function renderKanbanCard(s, cor){
+  const qtd = s.status==='aprovado' ? s.quantidade_aprovada_puxada
+            : s.status==='pendente_puxada' ? s.quantidade_aprovada_comercial
+            : s.quantidade_solicitada;
+  const extra = s.status==='aprovado' ? `Prazo: ${formatDateBR(s.prazo_puxada)}` : formatDateBR(s.created_at);
+  return `
+    <div class="kcard" style="border-left-color:${cor};" data-action="ver-detalhe" data-id="${s.id}">
+      <div class="prod">${esc(s.nome_produto)}</div>
+      <div class="cod">${esc(s.codigo_produto)} · ${esc(s.operacao||'—')}</div>
+      <div class="qtd">${formatNumero(qtd)}</div>
+      <div class="meta"><span>${esc(s.solicitante_nome)}</span><span>${extra}</span></div>
+    </div>
+  `;
+}
+
+/* ===================== MODAL DE DETALHE ===================== */
+async function abrirDetalheSolicitacao(id){
+  const sol = state.solicitacoes.find(s=>s.id===id);
+  if(!sol) return;
+  const eventos = await loadHistorico(id);
+  const info = STATUS_INFO[sol.status] || {label:sol.status, pill:''};
+  const root = document.getElementById('modal-root');
+  root.innerHTML = `
+    <div class="modal-backdrop" data-action="fechar-modal">
+      <div class="modal-box" style="position:relative;" onclick="event.stopPropagation()">
+        <button class="modal-close" data-action="fechar-modal">✕</button>
+        <span class="pill ${info.pill}" style="margin-bottom:10px;">${info.label}</span>
+        <span class="pill pill-puxada" style="margin-bottom:10px;margin-left:6px;">${esc(sol.operacao||'—')}</span>
+        <h3 style="font-size:18px;margin-bottom:4px;">${esc(sol.nome_produto)}</h3>
+        <p class="hint" style="margin-bottom:16px;">${esc(sol.codigo_produto)} · solicitado por ${esc(sol.solicitante_nome)}</p>
+        <div class="grid-2" style="margin-bottom:8px;">
+          <div><div class="hint">Quantidade solicitada</div><div class="mono" style="font-size:16px;">${formatNumero(sol.quantidade_solicitada)}</div></div>
+          <div><div class="hint">Quantidade aprovada (Comercial)</div><div class="mono" style="font-size:16px;">${sol.quantidade_aprovada_comercial!=null?formatNumero(sol.quantidade_aprovada_comercial):'—'}</div></div>
+          <div><div class="hint">Quantidade confirmada (Puxada)</div><div class="mono" style="font-size:16px;">${sol.quantidade_aprovada_puxada!=null?formatNumero(sol.quantidade_aprovada_puxada):'—'}</div></div>
+          <div><div class="hint">Prazo de puxada</div><div class="mono" style="font-size:16px;">${formatDateBR(sol.prazo_puxada)}</div></div>
+        </div>
+        <h4 style="font-size:13px;margin:18px 0 12px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;">Linha do tempo</h4>
+        <ul class="timeline">
+          ${eventos.map(ev=>`
+            <li>
+              <div class="ev-tipo">${esc(tipoEventoLabel(ev.tipo_evento))}</div>
+              <div class="ev-meta">${esc(ev.usuario)} · ${formatDateTimeBR(ev.created_at)}</div>
+              ${ev.detalhe ? `<div class="ev-detalhe">${esc(ev.detalhe)}</div>` : ''}
+            </li>`).join('') || '<li>Sem eventos registrados</li>'}
+        </ul>
+      </div>
+    </div>
+  `;
+}
+function tipoEventoLabel(tipo){
+  return {
+    criada:'Solicitação criada',
+    aprovado_comercial:'Aprovado pelo Comercial',
+    rejeitado_comercial:'Rejeitado pelo Comercial',
+    aprovado_puxada:'Aprovado pela Puxada',
+    rejeitado_puxada:'Rejeitado pela Puxada'
+  }[tipo] || tipo;
+}
+function fecharModal(){ document.getElementById('modal-root').innerHTML=''; }
+
+/* ===================== EVENTOS (DELEGAÇÃO) ===================== */
+document.addEventListener('click', async (e)=>{
+  const roleBtn = e.target.closest('.role-btn');
+  if(roleBtn){
+    loginSelectedRole = roleBtn.dataset.role;
+    renderLogin();
+    return;
+  }
+  const btn = e.target.closest('[data-action]');
+  if(!btn) return;
+  const action = btn.dataset.action;
+  const id = btn.dataset.id ? Number(btn.dataset.id) : null;
+
+  if(action==='ir-tab'){ state.tab = btn.dataset.tab; renderContent(); highlightNav(); }
+  else if(action==='ordenar-produtos'){
+    const campo = btn.dataset.campo;
+    if(state.produtosSort.campo===campo) state.produtosSort.direcao = state.produtosSort.direcao==='asc' ? 'desc' : 'asc';
+    else state.produtosSort = {campo, direcao:'asc'};
+    renderContent();
+  }
+  else if(action==='logout'){ fazerLogout(); }
+  else if(action==='atualizar'){ await refreshData({force:true}); toast('Atualizado', 'success'); }
+  else if(action==='abrir-importar'){ triggerFileInput(); }
+  else if(action==='cancelar-importacao'){ state.importState=null; renderContent(); }
+  else if(action==='baixar-modelo'){ baixarModeloCSV(); }
+  else if(action==='confirmar-importacao'){
+    const {linhas} = construirLinhasImportacao();
+    if(!linhas.length){ toast('Nenhuma linha válida para importar', 'error'); return; }
+    const checkboxLimpar = document.getElementById('import-limpar-antes');
+    const limparAntes = checkboxLimpar ? checkboxLimpar.checked : false;
+    if(limparAntes){
+      const operacoes = Array.from(new Set(linhas.map(l=>l.operacao)));
+      if(!confirm(`Isso vai APAGAR todos os produtos já cadastrados em: ${operacoes.join(', ')}\n\ne substituir pelos ${linhas.length} produto(s) desta planilha. Confirma?`)) return;
+    }
+    await importarProdutos(linhas, limparAntes);
+    renderContent();
+  }
+  else if(action==='solicitar-produto'){
+    state.formNova = {produtoId:id, busca:''};
+    state.tab = 'nova';
+    renderContent(); highlightNav();
+  }
+  else if(action==='selecionar-produto-nova'){
+    state.formNova.produtoId = id;
+    state.formNova.busca = '';
+    renderContent();
+  }
+  else if(action==='aprovar-comercial'){
+    const sol = state.solicitacoes.find(s=>s.id===id);
+    const qtd = parseFloat(document.getElementById('qtd-com-'+id).value);
+    const obs = document.getElementById('obs-com-'+id).value;
+    if(!qtd || qtd<=0){ toast('Informe uma quantidade válida', 'error'); return; }
+    if(qtd > sol.quantidade_solicitada){ toast('A quantidade aprovada não pode ser maior que a solicitada', 'error'); return; }
+    await aprovarComercial(sol, qtd, obs);
+  }
+  else if(action==='rejeitar-comercial'){
+    const sol = state.solicitacoes.find(s=>s.id===id);
+    const obs = document.getElementById('obs-com-'+id).value;
+    if(!confirm('Confirma a rejeição desta solicitação?')) return;
+    await rejeitarComercial(sol, obs);
+  }
+  else if(action==='aprovar-puxada'){
+    const sol = state.solicitacoes.find(s=>s.id===id);
+    const qtd = parseFloat(document.getElementById('qtd-pux-'+id).value);
+    const prazo = document.getElementById('prazo-pux-'+id).value;
+    const obs = document.getElementById('obs-pux-'+id).value;
+    if(!qtd || qtd<=0){ toast('Informe uma quantidade válida', 'error'); return; }
+    if(qtd > sol.quantidade_aprovada_comercial){ toast('A quantidade não pode ser maior que a aprovada pelo Comercial', 'error'); return; }
+    if(!prazo){ toast('Informe o prazo de puxada', 'error'); return; }
+    await aprovarPuxada(sol, qtd, prazo, obs);
+  }
+  else if(action==='rejeitar-puxada'){
+    const sol = state.solicitacoes.find(s=>s.id===id);
+    const obs = document.getElementById('obs-pux-'+id).value;
+    if(!confirm('Confirma a rejeição desta solicitação?')) return;
+    await rejeitarPuxada(sol, obs);
+  }
+  else if(action==='ver-detalhe'){ await abrirDetalheSolicitacao(id); }
+  else if(action==='fechar-modal'){ fecharModal(); }
+});
+
+document.addEventListener('change', (e)=>{
+  if(e.target.classList && e.target.classList.contains('mapping-select')){
+    const campo = e.target.dataset.campo;
+    state.importState.mapping[campo] = Number(e.target.value);
+    renderContent();
+  }
+  if(e.target.id==='filtro-status-gestao'){ state.gestaoFiltro.status = e.target.value; renderKanbanBoard(); }
+  if(e.target.id==='filtro-minhas-gestao'){ state.gestaoFiltro.somenteMinhas = e.target.checked; renderKanbanBoard(); }
+  if(e.target.id==='filtro-operacao-global'){ state.operacaoAtual = e.target.value; renderContent(); }
+  if(e.target.id==='filtro-categoria-produtos'){ state.produtosCategoria = e.target.value; renderTabelaProdutosBody(); }
+  if(e.target.id==='arquivo-importacao'){
+    const file = e.target.files[0];
+    if(file) handleArquivoSelecionado(file);
+  }
+});
+
+document.addEventListener('input', (e)=>{
+  if(e.target.id==='busca-produtos-tab'){ state.produtosBusca = e.target.value; renderTabelaProdutosBody(); }
+  if(e.target.id==='busca-produto-nova'){ state.formNova.busca = e.target.value; renderResultadosBuscaNova(); }
+  if(e.target.id==='busca-gestao'){ state.gestaoFiltro.busca = e.target.value; renderKanbanBoard(); }
+});
+
+function highlightNav(){
+  document.querySelectorAll('.nav-item').forEach(b=>b.classList.remove('active'));
+  const active = document.querySelector(`.nav-item[data-tab="${state.tab}"]`);
+  if(active) active.classList.add('active');
+}
+function triggerFileInput(){
+  let input = document.getElementById('arquivo-importacao');
+  if(!input){
+    input = document.createElement('input');
+    input.type='file'; input.id='arquivo-importacao'; input.accept='.xlsx,.xls,.csv'; input.style.display='none';
+    document.body.appendChild(input);
+  }
+  input.value='';
+  input.click();
+}
+
+/* ===================== BOOTSTRAP ===================== */
+async function bootstrapApp(){
+  document.getElementById('app').innerHTML = `<div style="padding:60px;text-align:center;color:var(--muted);">Carregando...</div>`;
+  await refreshData({force:true});
+  initRealtime();
+  render();
+}
+(function init(){
+  if(!SUPABASE_URL || SUPABASE_URL.indexOf('COLE_AQUI')===0 || !SUPABASE_ANON_KEY || SUPABASE_ANON_KEY.indexOf('COLE_AQUI')===0){
+    renderConfigPendente();
+    return;
+  }
+  sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const saved = sessionStorage.getItem('sessao_estoque_puxada');
+  if(saved){
+    try{ state.session = JSON.parse(saved); }catch(err){ state.session = null; }
+  }
+  if(state.session) bootstrapApp();
+  else render();
+})();
+</script>
+</body>
+</html>
